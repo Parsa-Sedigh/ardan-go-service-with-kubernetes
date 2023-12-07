@@ -1,4 +1,10 @@
 ## 1-1.0 Intro
+We're gonna use `Kind` for local k8s env. You can also use other local k8s env.
+
+On Windows you need WSL2.
+
+You need at least 4 CPUs available in your docker env.
+
 ## 2-1.1: Design Philosophy, Guidelines, What to Expect
 ## 3-1.2: Tooling to Install
 ## 4-2.0 Intro
@@ -15,7 +21,6 @@ A project gets to define the design philosophies, policies and guidelines that n
 By creating a go.mod , it allows the go tooling to understand: This is a go project initialized for modules and this is the root folder.
 `go mod init <name>` needs a name because the compiler needs to have a namespace for everything in order for it to be able to locate the
 right code.
-
 
 What's beautiful about go is don't share binaries, share source code.
 
