@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/debug"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/logger"
 	"github.com/ardanlabs/conf/v3"
@@ -116,9 +117,14 @@ func run(log *zap.SugaredLogger) error {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
+	apiMux := handlers.APIMux(handlers.APIMuxConfig{
+		Shutdown: shutdown,
+		Log:      log,
+	})
+
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,
-		Handler:      nil, // mux
+		Handler:      apiMux, // mux
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
@@ -146,7 +152,8 @@ func run(log *zap.SugaredLogger) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
-		// ========= LOAD SHEDDING FOR APPLICATION API =========
+		// -------------------------------------------------------------------------
+		// LOAD SHEDDING FOR APPLICATION API
 		/* tell the api to start load shedding and we give this operation a timeout using ctx. We give the api some time to make sure
 		that all the goroutines terminate, but this can go on forever, so we give it a timeout.*/
 		if err := api.Shutdown(ctx); err != nil {

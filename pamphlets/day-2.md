@@ -838,3 +838,129 @@ Now we need a mux to define the routes and bind them to handler functions.
 
 ## 10-Application Mux
 ### Web framework
+**Polymorphism means a piece of code changes it's behavior depending upon the concrete data it is operating on.** We're able to do that
+by allowing the input of concrete data to be passed through it's behavior not based on what it is but based on what it can do.
+
+The mux we're gonna use is `httptreemux`.
+
+```shell
+make dev-update
+make test-endpoint # or make test-endpoint-local if not using telepresence
+```
+
+An API is about data transformation. Data in, data out. When it comes to passing data into an API, you have two choices:
+1. you can accept that input based on what it is(concrete type of data)
+2. or you can accept that input based on what that data does(interface type of data)
+
+**But you should always return the data out using the concrete type.** Do not pre-decouple data, you're not helping anybody. The decision to
+decouple sth is not your decision as the API designer, it is the caller's decision. You(as the API designer) get to decide if you want to accept
+concrete type in a decoupled state, but you don't decide for the caller with the data that goes out.
+
+But we're breaking our rule in `handlers.go` APIMux func. We're returning an interface named `http.Handler`. We instead return a concrete type named
+`*httptreemux.ContextMux`. Nothing breaks in the main.go because `*httptreemux.ContextMux` implements http.Handler interface.
+
+**Note:** The only time it is ok to return an interface, is when we return `any` interface, because you're trying to do sth really general.
+But we've go generics in go. So use generics instead of `any` or `interface{}`.
+
+**Do not use an interface as the return type.**
+
+Note on generics: It all comes back down to **polymorphism**. The interface type allows us to write APIs that are polymorphic.
+Let's say we have an API that says: I will accept any piece of concrete data that conforms to this **behavior(interface)**.
+But we call that polymorphism with interface: **runtime polymorphism**. Because we do not recognize the behavior of that code until we run.
+It's only at runtime when we know how that data is gonna behave.
+
+Now generics in go is really not that much different. A generic function in go is a polymorphic function. In those functions,
+you're deciding what the type parameters for that input and potentially output, are going to be. The difference is that generics lets you write
+polymorphic functions that are compile time based not runtime. In other words, we know at compile-time what the behavior is gonna be not at runtime.
+
+So a generic function is a polymorphic function where we determine at compile time what the behavior of that function is gonna be.
+
+Go had generic functions before they introduced generics! Like make, append, new, close, delete. All of the built-in funcs are technically generic funcs.
+They can accept values of different types. The difference between these and the funcs with new generics feature is only the go team could write them!
+You couldn't write a generic func yourself.
+
+If you're gonna add generics to your programming lang, which means adding compile-time polymorphic funcs, you've got two choices at compilation:
+1. write a physical concrete implementation of every function for every type that you know it's gonna be used for that function. The advantage
+of writing an individual concrete function for every type is those functions are gonna run like concrete functions. Very fast and probably in many
+cases, zero allocation. The drawback is compile times take longer depending on the number of types that are gonna use that function(we have to write
+that function for every type)
+2. instead of writing a separate concrete func for generic function for every type that uses that generic func, they write one func that will
+be used for all types(the same tactic they used for built-in funcs). The advantage is we get quick compile times, but is the downside is that
+generic funcs are slower? No(in case of go), the generic funcs run at the same speed as runtime polymorphic funcs
+
+One of the strengths of go is fast compile time. The language team won't do anything to make it slower. Go uses approach 2.
+
+**Note:** Use runtime polymorphic funcs until you can't and the only use case for when you can't use runtime polymorphic funcs is when you wanna return.
+When you would have to use an empty interface to return, or you're building container types which are data structures, linked lists, stacks, queues,
+maps and ... , that's where the generics are really gonna shine.
+
+These two types of polymorphic funcs(runtime and compile time) have no difference in performance!
+
+So again: We don't want to write funcs that use interfaces as return types and if it ends up being returning an empty interface return type,
+we now have generics. So at compile time we can use the concrete type(the type parameter) instead of an empty interface.
+
+We're gonna have groups of handlers for the different domains.
+
+Under the handlers folder, we have a folder for each version of our API and under each, we would have a folder for each group of handlers.
+
+Q: Isn't that(like homegrp) a containment package? that contains all those handlers?
+
+A: Well it's containing handlers related to that domain.
+
+What is the policy that we wanna set on handlers? What should a handler do and what shouldn't it do, to make sure we have consistency.
+
+Frontend dev should participate in the design of web APIs.
+
+It's OK to have different result models(2xx), but different error models means you can't generalize your error handling and that's very bad!
+
+We want to put boilerplate code around logging and error handling, so that they are consistent.
+
+All a handler does, is 3 things:
+1. validate the input(if there's any) that's coming in
+2. call into the business layer to do any processing
+3. return errors(if there are any), note that we don't handle errors in the handler, or handle the ok response if there is no error
+
+But there's a challenge and every mux is gonna present this challenge.
+
+We have a goroutine that's listening on a `net.Listener` for some HTTP traffic that's coming in. The job the mux is to look at the req
+select the right handler based on the ServeHTTP func and launch a goroutine to do the work. The job of that goroutine is to call the possible
+middlewares and the handler.
+
+The handlers layer is kinda the outmost layer, yes mux is the outmost but it doesn't know anything about business processing. This is a big
+problem because if I wanna return errors from handler to sth, I need sth in between mux and the handlers. I don't have the ability to do that.
+
+Every mux is gonna treat my handler func as the most outer layer.
+
+We want to wrap the handlers layer like an onion. Each layer does one thing. So the layers are like(from outmost to inner layers):
+- log
+- error
+- handling panics
+- handlers
+- ...
+
+With this, we can return an error from handlers layer and that error can be process all the way out. So there are some layers before the handler and they
+execute code before and after the handlers layer. We can't do that with our router. So we build our own router! **We want middlewares.**
+
+We need a way of doing this. We want to also pass a context to the handler funcs and also return possible errors from the handlers to outer layers.
+We want a handler func to look like:
+```go
+func Handler(ctx context.Context, w http.ResponseWriter, r *http.Request) error {}
+```
+
+If the context package was in the std lib from day 1(from v 1.0), the handler functions would look like the line above.
+
+From an API perspective, you want your context to be the first param of any API that does any sort of I/O or work that may need to be cancelled.
+Also if you like tracing like open telemetry, then you need that context, so you can gather that info throughout the call chain.
+
+**General rule:**
+- Foundation-level functions should never need sth from the context in order to run.
+- no business layer func should need sth in the context in order to succeed. Note: Business level APIs can be used for all sorts of different apps:
+CLI tools, web apps. If suddenly you need to hide a DB connection in the ctx for a business api to work, how does that CLI developer know that?
+We can pull those things out of the ctx at the app layer, pass them into the business layer.
+- in the app layer we can put things in the ctx, but the handler has to pull them out(?).
+
+**Do not hide things in the ctx.** Things like loggers, DB connections and ... which would cause these funcs to fail if sth is not in the ctx.
+
+But let's say there is a legacy software and in prod, but we don't have any logging. If ctx is used in the software, instead of 
+breaking everything by passing logger everywhere, we can break the general rules and hide the logger in the context. But you have to be careful that
+the logger is in the ctx when the req came(we don't know about all of the source code), so we have to check if the logger is there.
