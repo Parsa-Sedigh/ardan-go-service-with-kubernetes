@@ -319,7 +319,7 @@ is running.
 To get the environment up:
 ```shell
 make dev-up
-make dev-update-apply
+make dev-update-apply # if the source code has changed
 make dev-logs # see the logs to double check everything
 ```
 
@@ -774,7 +774,7 @@ Q: Can bubble sort be done in a concurrent way? Can you create multiple goroutin
 
 A: No. It can't be done concurrently. There are algos that can't be done in an out of order fashion(concurrently).
 
-Channels serve one purpose and that's for signaling. Horizontal signaling. Do not think of a channel as a data structure. With channels,
+**Channels serve one purpose and that's for signaling.** Horizontal signaling. Do not think of a channel as a data structure. With channels,
 one goroutine can signal another goroutine with or without data, some event.
 
 If the **signal** doesn't make sense in the context you want to use it, you should not be using a channel.
@@ -964,3 +964,5 @@ We can pull those things out of the ctx at the app layer, pass them into the bus
 But let's say there is a legacy software and in prod, but we don't have any logging. If ctx is used in the software, instead of 
 breaking everything by passing logger everywhere, we can break the general rules and hide the logger in the context. But you have to be careful that
 the logger is in the ctx when the req came(we don't know about all of the source code), so we have to check if the logger is there.
+
+## 11-

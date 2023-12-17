@@ -56,7 +56,8 @@ spec:
 
       containers:
         - name: sales-api
-          # this service-image is like a placeholder. It gets filled with the image we defined in each environment. For example, for dev
+          # Kustomize will be able to look up service-image and replace it with what we know what the service-image will be called in the environment
+          # This service-image is like a placeholder. It gets filled with the image we defined in each environment. For example, for dev
           # env, this will be replaced by the image we have defined in k8s/dev/sales/kustomization.yaml
           image: service-image
 

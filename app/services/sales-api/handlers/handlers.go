@@ -2,7 +2,8 @@ package handlers
 
 import (
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers/v1/testgrp"
-	"github.com/dimfeld/httptreemux/v5"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/mid"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -15,11 +16,11 @@ type APIMuxConfig struct {
 }
 
 // APIMux constructs a http.Handler with all application routes defined
-func APIMux(cfg APIMuxConfig) http.Handler {
-	mux := httptreemux.NewContextMux()
+func APIMux(cfg APIMuxConfig) *web.App {
+	app := web.NewApp(cfg.Shutdown, mid.Logger(cfg.Log))
 
-	// bind a route to the mux. If a req with GET method comes in, execute this handler
-	mux.Handle(http.MethodGet, "/test", testgrp.Test)
+	// bind a route to the mux(app variable). If a req with GET method comes in, execute this handler
+	app.Handle(http.MethodGet, "/test", testgrp.Test)
 
-	return mux
+	return app
 }
