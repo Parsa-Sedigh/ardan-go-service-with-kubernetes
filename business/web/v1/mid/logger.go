@@ -22,13 +22,13 @@ func Logger(log *zap.SugaredLogger) web.Middleware {
 				path = fmt.Sprintf("%s?%s", path, r.URL.RawQuery)
 			}
 
-			log.Info(ctx, "request started", "trace_id", v.TraceID, "method", r.Method, "path", path, "remoteaddr", r.RemoteAddr)
+			log.Infow("request started", "trace_id", v.TraceID, "method", r.Method, "path", path, "remoteaddr", r.RemoteAddr)
 
 			err := handler(ctx, w, r)
 
 			// by seeing this log, it means we don't have leaking(the goroutine created for the req is gonna complete) and also it's not blocked,
 			// because we actually saw this log
-			log.Info(ctx, "request completed", "trace_id", v.TraceID, "method", r.Method, "path", path, "remoteaddr", r.RemoteAddr,
+			log.Infow("request completed", "trace_id", v.TraceID, "method", r.Method, "path", path, "remoteaddr", r.RemoteAddr,
 				"statuscode", v.StatusCode, "since", time.Since(v.Now).String())
 
 			return err

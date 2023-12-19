@@ -121,9 +121,9 @@ at the foundation layer and that func is calling a func from the STD lib and eve
 when we see this, we can think that the error interface is essentially creating a signaling mechanism in itself. Because this error interface
 will allow any value to flow through it as long as it implements the error interface.
 
-Q: What does it mean to handle an error?
+**Q:** What does it mean to handle an error?
 
-A: Error handling rules:
+**A:** Error handling rules:
 1. you have to log the error. If you can't log it, you can't handle it, some parent layer should handle it. If you can log it,
 you have to decide if it's the best place to handle it? If not, you can wrap the error with more context and return it up to the caller.
 2. you have to make a decision on whether or not the application can keep running(whether the goroutine that you're on has to terminate or the
@@ -162,16 +162,102 @@ what's going on and handle it. We put the error handling into **one place**.
 Q: What types of error signals or error values we need out of the box?
 
 A: Two values to start with.
-- trusted error type: We don't want to leak anything about the system by default. We have an error that has a message(string) and we
+- **trusted error type**: We don't want to leak anything about the system by default. We have an error that has a message(string) and we
 trust the message and that message can go all the way out. **Everything is not trusted to begin with.** If we receive an error
 and we don't know what that error is, we don't know what type that error is, we treat it as a 500. But overtime we can improve and make it 
 more specific, maybe a 4xx.
-- shutdown error type: if your service is having integrity issues, it should not be running. When having these issues, the software
-should shutdown before starting corrupting DBs and filesystems. Note that we don't want to shut the software down forcefully, we want to
+- **shutdown error type**: if your service is having integrity issues, it should not be running. When having these issues, the software
+should shut down before starting corrupting DBs and filesystems. Note that we don't want to shut the software down forcefully, we want to
 have a controlled shutdown. One of the reasons we have a shutdown channel in the web app(main.go), was to give code at any level a chance to suggest
-that we should shutdown the app. Note that code in the app layer could shutdown the app itself, but the layers below the app layer(business and foundation),
-are not allowed to shutdown the app itself. Those layers are not allowed to call panic(), os.Exit or ... . However, they can **suggest**
-shutting down the app by returning a shutdown error. They say to the error middleware: I think you should shutdown this app and then the error middleware
+that we should shut down the app. Note that code in the app layer could shut down the app itself, but the layers below the app layer(business and foundation),
+are not allowed to shut down the app itself. Those layers are not allowed to call panic(), os.Exit or ... . However, they can **suggest**
+shutting down the app by returning a shutdown error. They say to the error middleware: I think you should shut down this app and then the error middleware
 can do some checks as well. So they suggest shutting down, but they shouldn't actually do it.
 
 ## 13-Error Handling
+Q: Is shutdown error type foundational or business?
+
+A: No right or wrong answer. It's how strict of a policy you wanna use. Foundational. It's in shutdown.go .
+
+**In go we use the word `Error` at the end of the name of a type to signify that it's an error type. Like shutdownError.**
+Note that `ErrorResponse` is not an error type because it doesn't with the word `Error`. But RequestError is an error type and it's a trusted
+error.
+It's good to make the error type unexported, so nobody can do type assertions and get out of the decoupling. So when it's possible,
+make that custom error type unexported.
+
+The factory functions for a custom error type should still the `error` interface not the custom type itself! Like `NewShutdownError`.
+
+The ordering of things in a package(look at shutdown.go):
+- the concrete type 
+- factory function of that concrete type
+- method set of that concrete type(if they're a lot, you can make them into separate files but in the same package obviously)
+- regular functions
+
+**tip:** for custom error types(struct) use pointer receiver and for defining methods for slices, use value receiver.
+
+Q: Is trusted error type foundational or business?
+
+A: Business. It should be versioned as well. So put it under v1 folder because for v2 we might decide we wanna different fields and ... .
+
+We can convert a layer into a package as well. For example the v1 folder(layer) could be converted into a package by adding a <package name>.go
+file there and define the package. **Either you have a layer and there are packages inside of that or you have just packages.**
+But this situation(making v1 a package and we also have packages inside of v1 package), breaks one of the rules where we have sub-packages so v1
+should be a layer but now we just made v1 a package. But we don't have a better answer.
+
+Note: The `mid` package has the middlewares. It's kinda containment which is not good.
+
+We like to use singular names for files.
+
+Note: It's not good to use an alias for an import.
+
+Note: An error returned from the error handler(error middleware) could be an error returned from web.Respond() or could be a shutdown error. But we need to
+validate that it was a shutdown error. We do this using the `validateError` func. If the error was syscall.EPIPE or syscall.ECONNRESET,
+we don't care, it's not enough to shut down the system. But if it's anything else, return true and therefore we would shut down.
+
+### Panics
+We need to stop the panics. The http package already stops panics. So the goroutine that the http package creates to handle the req, will stop the panic
+if it occurs and it will return a 500. It's important that we stop the panics for ourselves and allow the rest of the middleware to run.
+
+If the handler panics, the panic middleware should be as close to handler as possible and then the rest of the middlewares go to above layers.
+So the panic middleware stops the panic and let the above middlewares to run(like the error middleware).
+
+`recover()` doesn't work unless put in a `defer` statement.
+
+There are two things important with the panics:
+1. we should log the stacktrace. You don't want to lose the info in the stack trace in case we stopped a panic.
+
+When a deferred func is running, we're no longer in the func that that defer func(){} was defined and we're also not in the parent call stack.
+We're in sorta a matrix.
+
+For example when the `defer func(){}` of the panics middleware runs, we're not in that middleware and also not in the parent middleware!
+This is a problem when it comes to the errors because the handler **can** return an error to the errors middleware but the defer func() {} in the
+panics middleware(which is between handler and the errors middleware) can't return an error back. Because it's out of that call path. What we need to do
+is to construct an error value in deferred func and return it to the errors middleware, but how we're able to get a value back to the parent func
+through the `return` statement?
+
+We can name our return arguments. This in itself is not a problem. The naked return statements coming with this, is a problem. Because the return
+values are named, with the go syntax, we don't have to specify the values after the `return` statement. This is bad in terms of readability.
+
+**Naked return is bad.** If you **have to** name the return arguments, still don't use naked return, specify the values by using the literal values
+like 0 in case of int if that's not what we care about, or use the variable name. So be explicit on the `return`.
+```go
+package main
+
+func Sth() (myint int) {
+	// DO: be explicit on the return
+	// DON'T: don't use naked return
+	return myint // or return <constant - if we don't care about this>
+}
+```
+
+In the panics middleware, we're using a named return arg and it's name is `err`. So even though we're inside a deferred func, thanks to closure,
+we still have the err var accessible to me and we can still set it right before going to the parent func.
+
+So two reasons for using named return args:
+1. for the defer func scenario
+2. when a func is returning 3 or more values and all of them have the same type. But don't use naked `return`s.
+
+So now when we have a panic inside the handler, the middlewares will still run, we still have the `request completed` log and
+specifically the error middleware will return a 500.
+
+## 14-Metrics / Panics / JWT
