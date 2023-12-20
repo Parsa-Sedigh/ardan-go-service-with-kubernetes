@@ -3,6 +3,7 @@ package mid
 import (
 	"context"
 	"fmt"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/metrics"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
 	"net/http"
 	"runtime/debug"
@@ -27,6 +28,8 @@ func Panics() web.Middleware {
 					/* Do not log the stacktrace HERE. The error handler(middleware) logs. Instead, here we construct an error with the
 					stacktrace in it and then that error will be received by the error middleware.*/
 					err = fmt.Errorf("PANIC [%v] TRACE[%s]", rec, string(trace))
+
+					metrics.AddPanics(ctx)
 				}
 			}()
 

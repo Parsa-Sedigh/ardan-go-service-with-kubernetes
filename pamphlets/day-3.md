@@ -31,7 +31,7 @@ There are middlewares in the `App`(mw field) like loggers and middlewares in one
 Note: We can't import code from one foundation package into another or from layers above foundation into the foundation.
 For example, web package can't import the logger package(both are in foundation).
 
-If you had a package that doesn't make sense to have a file named after the package name, it's a containment package. For example the `mid` package
+If you had a package that doesn't make sense to have a file named after the package name, it's a **containment** package. For example the `mid` package
 in our project's business layer. It contains all the different middleware functions. And therefore this package is not ideal. But remember you can
 get away with a little bit of containment in the business layer, but never do that in the foundation layer.
 
@@ -261,3 +261,112 @@ So now when we have a panic inside the handler, the middlewares will still run, 
 specifically the error middleware will return a 500.
 
 ## 14-Metrics / Panics / JWT
+The metrics package in business layer is a convenience package.
+
+We have a singleton in metrics package. But didn't we say not to use singletons?
+
+Yes, but because it's almost impossible not to in this case. The expvar package kinda already acts as a singleton-based package. It exposes
+those endpoints and behind the scenes, has access to these variables that we're declaring through the package. 
+The singleton `m` var is unexported though.
+
+**If you check all these three, you can get away with package-level variables:**
+1. the order that they get initialized in, doesn't matter. As long as they get initialized before the main func and there's no ordering at all(you don't
+need one package to come before another), you can get away with it
+2. you don't need anything from the configuration system. The standalone construction always works. There's no configuration involved. The moment you need
+configuration, you can't use pacakge-level var, you have to construct it somewhere(most likely in main) and then pass it around your program.
+3. most important one: the only code that should touch that package-level var, is the same file that it's declared in, **not** other files(even inside the same
+package)
+
+An example of these rules being followed, is the `m` package-var in the `metrics` package.
+
+Just like cfg, do not scatter metrics all over the program, define all the metrics in one place in the metrics package.
+
+Just like the trace, we define a context key for metrics. Since it's in a context, if it's not there, means we're not gathering metrics therefore
+it shouldn't hurt or break anything.
+
+Some metrics are being set in the metrics middleware and one of them is being set in the panics middleware and we could set others in other places of code
+as long as you have the ctx.
+
+We're not constructing the metrics type in the main and passing it around. We could, but since we don't need any initialization ordering,
+we don't need anything from cfg and the metrics var(`m`) is not used in multiple files, so it's a package-level var and it's also not exported.
+
+### authentication and authorization
+- What JWT can do? What it can't?
+- What is open policy agent?
+
+We need both authentication and authorization. We need in some cases APIs that you can on;y access if you're authenticated and then there are
+APIs that is just not enough to be authenticated, you have to also be authorized, to use that API. Sometimes you're authorized to hit that endpoint
+but you're only authorized to see certain data coming out of that endpoint.
+
+We can do all of these with JWTs! **JWTs will give us the ability to do both authentication and authorization.** However, there are kinda some holes
+in JWTs. JWTs is a **foundational** tech that most likely you're gonna have to build sth on top of. Out of the box, JWTs isn't gonna be enough for
+most apps.
+
+You never wanna roll your own security system!
+
+What does it mean to be authenticated?
+
+Authentication means I know who you are. I've given you sth and you're giving it back to me and I know that that is sth that I've had to give it to you
+and therefore I feel confident, I know who you are.
+
+The only way you could've got that token is that **I** produced it and gave it to you.
+
+Authorization: what you're allowed to do. We start with you're not allowed to do anything and then authorization says what you're allowed to do, those
+things are specified.
+
+- header: this section of jwt gives us info about how to process the data related to the token. Helps us with the authentication piece
+- payload: we call this the claims. Payload helps us leveraging authorization piece
+- signature
+
+There are 2 algos to sign data:
+- HS algo: creates a signature using a shared secret. You can see this algo on jwt.io .
+- RSA algos: is what we're gonna use and this is one using a private, public key-pair.
+
+### RSA
+We take the private key and using an API related to JWTs,
+we take header and payload and then we sign it and the signature gets attached to the header and payload. The string formed by these three is what we
+give the client. Note that this data is not encrypted. Because we can take the JWT and decode it! Like on jwt.io . This data is just base64 **encoded**.
+There is nothing encrypted. **Do not put private info in the payload of the JWT.** People can read that. We signed the jwt with the private key.
+When a req comes in(requiring authentication), we need to authenticate the token. We need to make sure that we're the one that issued that token.
+How do we do that? We run the token through an algo that we're gonna get for free with the public key and that algo tells us whether or not this token
+was generated with our private key. It's gonna look at the signature of the token and says: yes, your private key generated that signature.
+So if our private key has generated that signature of the jwt, you're now authenticated. Anybody can have my public key. Anybody on the planet can
+validate that this token was signed by us. We don't want anyone have access to our private key.
+
+Key rotation: We found out that someone got our private key and now we got to rotate these keys.
+
+**The authentication happens by taking the signature part of the jwt, running it through a func that we get with our public key and validating it that it had
+to be signed by our private key.**
+
+Now that we've authenticated the jwt(which means it was signed by our private key), we can now look at the payload data(claims). This was for RSA algos.
+For HS algo, we just validate that that signature was signed with the shared key.
+
+A middleware can say: anybody hitting this route must be an admin and ... . This is authorization.
+
+Q: When do you need to potentially build more on top of these?
+
+A: For example, we've given someone a jwt that has a claim field that is for admins. But let's say we gave someone a token with admin field set to
+true in the claims but with expiry of 100years. Now let's say we don't want this guy to be able to login anymore. How we're gonna do that? He has a token
+with long-lasting expiry. Well we can do a key-rotation and say: Any token that was signed by this old private key is no longer valid, but we've
+got 100,000 of users and now all of them have to get a new token because we didn't want that specific user access the system anymore.
+
+So just using the bare-bones jwt implementation ends up not being enough.
+
+In a real world system, yeah we give the basic jwt to the user, but also you also would have a DB call to the user table. Now in case of previous example,
+we see in the DB that that user is blocked or sth and now when his req with the token comes in, he's authenticated at the token level but then when
+we make the DB call for the next step of authentication, we see he's blocked or sth.
+
+So you can't rely on the jwt itself alone to do the authentication. You want an extra check like a DB call for stopping someone from accessing the system
+without invalidating everybody's tokens.
+
+So we would have a second level of authentication check and that's why maybe the client's userId is in the claims. We put some info(not secret info
+because jwt can be read by anyone) in the claims so that it can be used on the second level of auth. We can use the **sub**(subject) which
+usually is the id of the client that this jwt was issued for.
+
+If you use OPA in the right way, we can get rid of any go code that does authorization. You push the processing of authorization to OPA.
+
+There are two ways of using OPA:
+1. sending req to the OPA server(completely offload that)
+2. or doing it in proc but detach it by executing OPA scripts directly
+
+## 15-Authentication / Authorization
