@@ -8,6 +8,16 @@ SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 # Kind
 # 	For full Kind v0.20 release notes: https://github.com/kubernetes-sigs/kind/releases/tag/v0.20.0
 
+# RSA Keys
+# 	To generate a private/public key PEM file(right from the CLI).
+# 	$ openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+# 	$ openssl rsa -pubout -in private.pem -out public.pem
+#
+# OPA Playground
+# 	https://play.openpolicyagent.org/
+# 	https://academy.styra.com/
+# 	https://www.openpolicyagent.org/docs/latest/policy-reference/
+
 # ==============================================================================
 # Define dependencies
 
@@ -128,6 +138,9 @@ dev-describe-sales:
 	kubectl describe pod --namespace=$(NAMESPACE) -l app=$(APP)
 
 # ==============================================================================
+
+run-scratch:
+	go run app/tooling/scratch/main.go
 
 run-local:
 	go run app/services/sales-api/main.go

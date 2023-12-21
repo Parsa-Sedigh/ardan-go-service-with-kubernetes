@@ -370,3 +370,55 @@ There are two ways of using OPA:
 2. or doing it in proc but detach it by executing OPA scripts directly
 
 ## 15-Authentication / Authorization
+### Creating private and public keys
+#### using CLI
+```shell
+which openssl # on mac, it's installed by default at /usr/bin/openssl
+```
+
+pem is the encoding we use to write the keys(private and public) to disk.
+
+```shell
+# generate private key
+openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+```
+
+Once you have a private key, then you can take that private key and generate the public key pair:
+```shell
+openssl rsa -pubout -in private.pem -out public.pem
+```
+Hide the private key in sth like vault, but it's no big deal if anybody has the public key. We need the public key to validate the signature of JWTs.
+
+There is also one check that we can do(we don't need to), but it's good practice that when you're verifying the token's signature, we also verify
+that it was issued by you.
+
+The private key we're gonna use in our project zarf/keys/<filename>.pem . Since it's shared in repo, do not use this private key for anything!
+
+#### using Go APIs
+For generating private and public keys, look at the `scratch` package in the tooling layer and it's `genKey` func. The scratch package is a 
+scratch program for playing with authentication and authorization. This package has basic program for:
+- generating private and public keys using cli and go APIs
+- jwt generation
+- jwt validation at the go level and OPA level
+- authorization validation at the OPA level
+
+For generating JWT, look at `genToken`.
+
+If you paste the generated JWT, in jwt.io it says: `Invalid signature` because we haven't given the debugger(jwt.io) the public key in order to
+validate the signature(that's the authentication piece - we signed jwt with the private key, now we wanna make sure the
+public key validates the jwt signature). So copy the public key and put it in the `verify signature` block in it's first box(public key box).
+Now it should say: `signature verified`.
+
+Note: jwt.io is the jwt debugger!
+
+Now to validate the jwt signature that the client sent to us, we can create a parser using jwt.NewParser() .
+
+We wanna use OPA for both authentication and authorization. We wanna offload that out of the Go side. So instead of using the APIs
+of jwt package to validate the signature of jwt, we want OPA to do that.
+
+In the `rego` folder, we have rego scripts. By hard coding the rego scripts, we have bounded to the binary to run those binaries. Ideally,
+we would like to pull those scripts from a server or even better, have an OPA server where we call it and those scripts live in the OPA server.
+
+Instead of using the go-jwt library to do the jwt signature validation, we wanna use OPA.
+
+## 16-Authentication / Authorization
