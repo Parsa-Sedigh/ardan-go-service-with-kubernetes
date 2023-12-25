@@ -173,6 +173,7 @@ that we should shut down the app. Note that code in the app layer could shut dow
 are not allowed to shut down the app itself. Those layers are not allowed to call panic(), os.Exit or ... . However, they can **suggest**
 shutting down the app by returning a shutdown error. They say to the error middleware: I think you should shut down this app and then the error middleware
 can do some checks as well. So they suggest shutting down, but they shouldn't actually do it.
+- (there is also an auth error type)
 
 ## 13-Error Handling
 Q: Is shutdown error type foundational or business?
@@ -323,7 +324,7 @@ There are 2 algos to sign data:
 - RSA algos: is what we're gonna use and this is one using a private, public key-pair.
 
 ### RSA
-We take the private key and using an API related to JWTs,
+We take the private key and using an API related to JWTs, we can sign jwts.
 we take header and payload and then we sign it and the signature gets attached to the header and payload. The string formed by these three is what we
 give the client. Note that this data is not encrypted. Because we can take the JWT and decode it! Like on jwt.io . This data is just base64 **encoded**.
 There is nothing encrypted. **Do not put private info in the payload of the JWT.** People can read that. We signed the jwt with the private key.
@@ -332,6 +333,8 @@ How do we do that? We run the token through an algo that we're gonna get for fre
 was generated with our private key. It's gonna look at the signature of the token and says: yes, your private key generated that signature.
 So if our private key has generated that signature of the jwt, you're now authenticated. Anybody can have my public key. Anybody on the planet can
 validate that this token was signed by us. We don't want anyone have access to our private key.
+
+**Token is not encrypted, just encoded.**
 
 Key rotation: We found out that someone got our private key and now we got to rotate these keys.
 
@@ -422,3 +425,89 @@ we would like to pull those scripts from a server or even better, have an OPA se
 Instead of using the go-jwt library to do the jwt signature validation, we wanna use OPA.
 
 ## 16-Authentication / Authorization
+Q: Why do we put the auth package in the business layer? Couldn't this be foundational?
+
+A: Because the `Claims` struct is business-related(project-oriented). But couldn't we just put the bulk of the package in the foundation layer
+and then put that piece in the business? We could, but this package is a convenience package, there's not a lot of code to break up.
+You might want to break this package into a package inside foundation layer and a package inside business layer.
+
+**Tip:** At the business layer, we don't want to do validation, we want validation to happen at the application layer.
+
+### Enum pattern
+Anytime a value could be an enumeration, we apply this pattern. Anytime I have a value like a string that's being passed in as
+external input that needs to be validated, I follow this pattern. For example user roles follow this pattern. We want the compiler to help us here.
+
+Go doesn't have enumerations. Why? Because of engineering tradeoffs. One of the reasons is because constants in go are not read-only variables.
+Constants in go have their own type system. A constant in go is literally a hard-coded value that's laid into code during compilation. They're not variables.
+
+Since constants have their own type system, numeric constants have this characteristic:
+
+The minimum precision of a numeric constant is 256 bits. Your go compiler when it comes to constants, is a high-precision calculator, but when
+it comes to integers(variables) it's silly because every constant eventually gonna be assigned to a variable in our code and you can't fit 256 bits integer
+into 64 bits.
+
+Because of these tradeoffs(which is a constant can be implicitly converted at compile time, to variable) you can't have enumerations.
+
+Define a type but use an unexported field, normally we call it `name`. An example is the Role type in the user package. That type represents an enum.
+Then we can define an unexported map of all possible values of the enum(roles map for example).
+
+We call this a set instead of enumeration, like a set of roles.
+
+We can't construct a set(enum) by hand, we should use the exported ones by the package. Q: I can construct a zero-value set. Right? Yes, but it's
+not valid.
+
+**Tip:** The parse(like `ParseRole`) and Must(like `MustParseRole`) funcs are idioms that exist in STD LIB. The Must is a func that if a bad thing happens, it
+would panic instead of returning an error. Using the Must funcs in test is good, but you shouldn't be using them in app code.
+
+Q: What is the kid in KeyLookup interface?
+
+A: It's key id. On the tokens(JWTs) that we're going to create, we will add this kid to the header of jwt.
+The idea of key id is for key rotation support. You might be using a third party system like vault and what that's doing is it stores an id
+for your public keys. So each one of your public keys are assigned an id. Now we wanna know which
+public token should be used for a jwt that hits our system. For this, as we generate a jwt, in the kid field of the header of jwt, we're gonna
+put that id of the public key pair. So when the token comes back, we look at the kid field in the header of token and that tells us which public key
+would validate that jwt and if we don't find the public key in the key store, maybe we've rotated it out, so the jwt is not valid anymore, we don't
+even have the public key anymore to validate the jwt.
+
+So we would add the kid to the jwt header.
+
+**Note:** Remember none of the packages other than the main.go file, can access the config system directly. The config has to be passed in. We can
+define another `Config` type for a package which has all the fields necessary for the construction of that type, like the `Config` type in auth package
+and that type should be passed as value not reference because it represents pure data, doesn't represent an API.
+
+The way vault is used in this project, is good for a dev env, there's probably better ways to do it in a k8s env in prod.
+We're not gonna use it in this project, instead we implement our own keystore but you're not allowed to use it in prod. But you can use this package
+in testing.
+
+We have created a private key to the project(and put it in repo which is not secure at all, don't do this) under keys folder and it's name is a uuid.
+Now that filename is gonna be the `kid` or key id which is put into the jwt header.
+
+We need the keys to be part of the docker image for all this to work(I think it's a security concern).
+
+```shell
+make run-scratch # to create jwt
+
+export TOKEN=<jwt from previous command>
+make test-endpoint-auth
+```
+
+After implementing authentication and authorization, we can almost start focusing on the business problems which is building a REST API for our sales.
+To do that, we need to think about our data model.
+
+## 17-Auth / Liveness and Readiness
+
+Business Package Design
+
+Business Package Implementation
+
+Business Package Implementation
+
+Database Support
+
+Migrations
+
+Storage Packages / Handlers
+
+Testing
+
+Testing / Observability

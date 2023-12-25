@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers/v1/testgrp"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/mid"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
 	"go.uber.org/zap"
@@ -13,6 +14,7 @@ import (
 type APIMuxConfig struct {
 	Shutdown chan os.Signal
 	Log      *zap.SugaredLogger
+	Auth     *auth.Auth
 }
 
 // APIMux constructs a http.Handler with all application routes defined
@@ -22,6 +24,7 @@ func APIMux(cfg APIMuxConfig) *web.App {
 
 	// bind a route to the mux(app variable). If a req with GET method comes in, execute this handler
 	app.Handle(http.MethodGet, "/test", testgrp.Test)
+	app.Handle(http.MethodGet, "/test/auth", testgrp.Test, mid.Authenticate(cfg.Auth), mid.Authorize(cfg.Auth, auth.RuleAdminOnly))
 
 	return app
 }

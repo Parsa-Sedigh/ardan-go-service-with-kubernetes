@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"io"
 
 	/* import the embed package although it's exported stuff are not used to run it's init funcs, because they are
 	needed for go:embed */
@@ -26,6 +26,9 @@ var (
 	// using go:embed, we don't need to do any file openings in code. So it's gonna become hard coded in the binary
 	//go:embed rego/authentication.rego
 	opaAuthentication string
+
+	//go:embed rego/authorization.rego
+	opaAuthorization string
 )
 
 func main() {
@@ -40,30 +43,51 @@ func main() {
 }
 
 func genKey() (*rsa.PrivateKey, pem.Block, error) {
-	// Generate a new private key.
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	//////////////////////////////// Generate a new private key. ////////////////////////////////
+	//privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	//if err != nil {
+	//	return nil, pem.Block{}, fmt.Errorf("generating key: %w", err)
+	//}
+
+	//// Create a file for the private key information in PEM form.
+	//privateFile, err := os.Create("private.pem")
+	//if err != nil {
+	//	return nil, pem.Block{}, fmt.Errorf("creating private file: %w", err)
+	//}
+	//defer privateFile.Close()
+	//
+	//// Construct a PEM block for the private key.
+	//privateBlock := pem.Block{
+	//	/* You tend to not want to write in the file what type of private key this is. So we don't say it's "RSA private key", instead,
+	//	we keep this label generic, so we just say the type is private key.*/
+	//	Type:  "PRIVATE KEY",
+	//	Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	//}
+	//
+	//// Write the private key to the private key file.
+	//if err := pem.Encode(privateFile, &privateBlock); err != nil {
+	//	return nil, pem.Block{}, fmt.Errorf("encoding to private file: %w", err)
+	//}
+
+	////////////////////////////////
+
+	// read the private key from the file shared in the repo(DANGEROUS)
+	file, err := os.Open("zarf/keys/54bb2165-71e1-41a6-af3e-7da4a0e1e2c1.pem")
 	if err != nil {
-		return nil, pem.Block{}, fmt.Errorf("generating key: %w", err)
+		return nil, pem.Block{}, fmt.Errorf("opening key file: %w", err)
 	}
+	defer file.Close()
 
-	// Create a file for the private key information in PEM form.
-	privateFile, err := os.Create("private.pem")
+	pemData, err := io.ReadAll(io.LimitReader(file, 1024*1024))
 	if err != nil {
-		return nil, pem.Block{}, fmt.Errorf("creating private file: %w", err)
-	}
-	defer privateFile.Close()
-
-	// Construct a PEM block for the private key.
-	privateBlock := pem.Block{
-		/* You tend to not want to write in the file what type of private key this is. So we don't say it's "RSA private key", instead,
-		we keep this label generic, so we just say the type is private key.*/
-		Type:  "PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+		return nil, pem.Block{}, fmt.Errorf("reading auth private key: %w", err)
 	}
 
-	// Write the private key to the private key file.
-	if err := pem.Encode(privateFile, &privateBlock); err != nil {
-		return nil, pem.Block{}, fmt.Errorf("encoding to private file: %w", err)
+	// convert the pem bytes into a private key
+	// pk stands for private key
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(pemData)
+	if err != nil {
+		return nil, pem.Block{}, fmt.Errorf("parsing auth private key: %w", err)
 	}
 
 	// ==============================================================================
@@ -76,6 +100,7 @@ func genKey() (*rsa.PrivateKey, pem.Block, error) {
 	defer publicFile.Close()
 
 	// Marshal the public key from the private key to PKIX.
+	//asn1Bytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	asn1Bytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return nil, pem.Block{}, fmt.Errorf("marshaling public key: %w", err)
@@ -128,6 +153,7 @@ func genToken(privateKey *rsa.PrivateKey, publicBlock pem.Block) error {
 
 	// this token has the header and the payload, but it's not signed yet. We have to sign it after this line
 	token := jwt.NewWithClaims(method, claims)
+	token.Header["kid"] = "54bb2165-71e1-41a6-af3e-7da4a0e1e2c1"
 
 	// provide the private key to be used for the signature. str is the signed jwt.
 	str, err := token.SignedString(privateKey)
@@ -165,7 +191,7 @@ func genToken(privateKey *rsa.PrivateKey, publicBlock pem.Block) error {
 	}
 
 	/* The ParseWithClaims func of the jwt api, doesn't know where the public key is. To give it the public key, we give it a func
-	that knows gow to get the public key.*/
+	that knows how to get the public key.*/
 	tkn, err := parser.ParseWithClaims(str, &clm, kf)
 	if err != nil {
 		return fmt.Errorf("parsing with claims: %w", err)
@@ -180,6 +206,8 @@ func genToken(privateKey *rsa.PrivateKey, publicBlock pem.Block) error {
 	/* Authentication completed, now we can start applying authorization. We got the claims of the jwt back to eventually do the
 	authorization.*/
 
+	ctx := context.Background()
+
 	// ==============================================================================
 
 	var b bytes.Buffer
@@ -187,11 +215,19 @@ func genToken(privateKey *rsa.PrivateKey, publicBlock pem.Block) error {
 		return fmt.Errorf("OPA authentication failed: %w", err)
 	}
 
-	if err := opaPolicyEvaluationAuthen(context.Background(), b.String(), str, clm.Issuer); err != nil {
+	if err := opaPolicyEvaluationAuthentication(ctx, b.String(), str, clm.Issuer); err != nil {
 		return fmt.Errorf("OPA authentication failed: %w", err)
 	}
 
 	fmt.Println("TOKEN VALIDATED BY OPA")
+
+	// ==============================================================================
+
+	if err := opaPolicyEvaluationAuthorization(ctx); err != nil {
+		return fmt.Errorf("OPA authorization failed: %w", err)
+	}
+
+	fmt.Println("AUTH VALIDATED BY OPA")
 
 	// ==============================================================================
 
@@ -200,9 +236,9 @@ func genToken(privateKey *rsa.PrivateKey, publicBlock pem.Block) error {
 	return nil
 }
 
-// opaPolicyEvaluationAuthen allows us to no longer write code in go to do the validation of jwt, instead we offload that work to
+// opaPolicyEvaluationAuthentication allows us to no longer write code in go to do the validation of jwt, instead we offload that work to
 // opa using .rego files. So we don't need to rely on go-jwt APIs.
-func opaPolicyEvaluationAuthen(ctx context.Context, pem string, tokenString string, issuer string) error {
+func opaPolicyEvaluationAuthentication(ctx context.Context, pem string, tokenString string, issuer string) error {
 	const opaPackage = "ardan.rego"
 	const rule = "auth"
 
@@ -236,5 +272,42 @@ func opaPolicyEvaluationAuthen(ctx context.Context, pem string, tokenString stri
 		return fmt.Errorf("bindings results[%v] ok[%v]", results, ok)
 	}
 
-	return err
+	return nil
+}
+
+func opaPolicyEvaluationAuthorization(ctx context.Context) error {
+	const rule = "rule_admin_only"
+	const opaPackage string = "ardan.rego"
+
+	query := fmt.Sprintf("x = data.%s.%s", opaPackage, rule)
+
+	q, err := rego.New(
+		rego.Query(query),
+		rego.Module("policy.rego", opaAuthorization),
+	).PrepareForEval(ctx)
+	if err != nil {
+		return err
+	}
+
+	input := map[string]any{
+		"Roles":   []string{"ADMIN"},
+		"Subject": "12345678",
+		"UserID":  "12345678",
+	}
+
+	results, err := q.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return fmt.Errorf("query: %w", err)
+	}
+
+	if len(results) == 0 {
+		return errors.New("no results")
+	}
+
+	result, ok := results[0].Bindings["x"].(bool)
+	if !ok || !result {
+		return fmt.Errorf("bindings results[%v] ok[%v]", results, ok)
+	}
+
+	return nil
 }

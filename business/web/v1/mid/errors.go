@@ -2,6 +2,7 @@ package mid
 
 import (
 	"context"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
 	"go.uber.org/zap"
@@ -30,6 +31,12 @@ func Errors(log *zap.SugaredLogger) web.Middleware {
 						Error: "data validation error",
 					}
 					status = trsErr.Status
+
+				case auth.IsAuthError(err):
+					er = v1.ErrorResponse{
+						Error: http.StatusText(http.StatusUnauthorized),
+					}
+					status = http.StatusUnauthorized
 
 				default:
 					er = v1.ErrorResponse{
