@@ -529,8 +529,70 @@ make liveness-local # to hit the liveness handler manually
 With this, anytime we want, we can get any info we want from the service and it's also called by k8s on an interval.
 
 ## 18-Business Package Design
+IMO it's risky to run liveness and readiness probes on a different port than the API(app) port. Because if the app doesn't come up,
+we won't catch it until it reaches the user traffic. Yes it's correct. I just hate the idea that those probes go through all the middlewares and ... .
+So we have to hard code in the middlewares that if the req is for liveness and readiness, leave it alone.
+It's better to put the liveness and readiness handlers in the same port as our api is running instead of the debug port. But for now,
+we're running them in the debug port.
 
-Business Package Implementation
+### DDD
+We have the handlers in the app layer, it's job is to receive external input(API).
+
+We want the domains to be self-contained. So a user should have pure data related to user and nothing else. Now if in an endpoint, we want to return
+products and their related users, this is an application layer problem, not a business layer(where all the domains exist and they're pure) problem.
+
+We're gonna have application-level model and business-level model. So when the business-level model changes, it won't break the
+application-level model(the model that is sent to the client as the response).
+
+Note: You can not join any data between domains, even behind the scenes.
+
+If we want the domains to be truly isolated(firewalls), then we need to plug in a storage layer to each domain. The storage layer is going to
+be given an API by the domain and the job of storage layer is to store that data however it wants in some DB. From a business layer perspective,
+the way you wanna think, is that each domain is running it's own DB, it's own instance somewhere on the planet, but we don't know where. It means
+that if we represent each one of the domains as a table in the same DB, then since they're in the same DB, we can do JOINs, right?
+No you can't! We said in the DDD world, we need to pretend that the data we're storing for domain 1, is in a physically different DB than domain 2.
+So if we want to blend(mix) any data together, I can't do it at the storage layer, we can only do it at the app layer right now.
+
+So again: Even if the tables of our domains are in the same DB(which is the case in day 1), we're pretending that it's not.
+**So we shouldn't have any SQL in the business layer(it's storage) that is JOINing two domains.** It is ok to have **one** domain of multiple
+tables where we JOIN them. Essentially their storage is together. For example we might have a couple of tables for one domain like user.
+
+Now when a domain gets too big, we can move it from our service and put it into it's own service. Nothing would break because the domains are isolated,
+the domains are not dependent on other domains. Now after doing this, the only thing that has to change is the app layer. How it gets the data
+from the removed domain? Well the moved domain is technically still in our old service but it's storage layer has changed in a way that
+for doing the CRUD, we hit the new service! So it's storage layer is gonna call the new service.
+
+Now if we want the products + username, we could create a new domain named `productsUsers` which we call it a **view**. This domain also has it's own
+storage layer like other domains which also means we assume it has it's own DB. With this, we kinda have a duplication of data of both users domain
+and products domain, but more importantly, how does the data get to the DB of this view domain? This is where some of the ideas around event-driven
+systems comes into the game. Maybe every time we add a product, that domain fires and event that says: this product created. Now the `productsUsers`
+domain subscribes to that event and say: Everytime a new product is created, I want the event and when that event occurs, it gets
+the product model back and since the product model has the userID, it can call the user domain to get the user
+
+The fact that domain A has relation to domain B, it means it can import domain B APIs and package. But not the other way around.
+For example the `productsUsers` domain has a userID in it's domain, so it can import the user package but not the other way around to avoid cyclic imports.
+
+Now if you don't have time, we can use a single DB instance where each one of the domains has it's own table. But each domain is pure.
+Now there's a cheat. With this cheat, if you wanna pull a domain out into it's own service, we would have some refactoring.
+The cheat is: Instead of adding the event system just yet, we can create a DB view for our view domains. **So every view domain gets it's own
+DB view where we can use JOINs(because it's a domain that contains multiple things)**. Now the view domains don't have to call into other domains.
+With this, later on, when I have more time, we can wire in the event system and stop using the DB view for the view domain and start putting it
+into it's own table.
+
+DB view is a cheat that we can use to postpone the use of event system. When we're cheating, we still keep the firewalls in the domains
+but there's no firewall in the DB layer which should be(separate DB for each domain). But after we have some time, we can
+use ddd better and remove the cheat which means turning the DB view into a table and use the event system.
+
+If you keep at least the core business packages(domains) firewalled,  cheating at the storage layer could potentially never hurt you.
+
+When you're at a point where every single domain is managing it's own data independent of the other, even if it's in the same DB, and you work
+with the other domain's APIs, you can scale horizontally and also you can pull sth out and scale it vertically if you need to. So we don't want to see
+a JOIN outside of a view. We only want to see it in a view domain and even better in there, we'd like to get rid of the DB view and use the event
+system to simulate that DB view. With this, we can pull out the view domain and put it into it's own service.
+
+Note: The events don't have to be asynchronous, they could be synchronous.
+
+## 19-Business Package Implementation
 
 Business Package Implementation
 
