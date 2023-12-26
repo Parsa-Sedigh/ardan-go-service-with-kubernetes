@@ -55,7 +55,11 @@ func AddGoroutines(ctx context.Context) int64 {
 		and we'll look at the number of goroutines from the runtime package and set the g.goroutines .
 
 		In a busy system, every 100 reqs is too frequent. So we can increase this number in those systems, maybe every 100,000 reqs.
-		We didn't want to create a goroutine for this, so we used this technique.*/
+		We didn't want to create a goroutine for this, so we used this technique.
+
+		We're picking one req every 100 reqs to set the number of goroutines for metrics. Because we don't want to build the timer loop.
+		Note that the liveness probe is a free timer loop. Because k8s is calling it on whatever interval you want the k8s to call it on.
+		So why would you ever need the timer loop? So we can update the goroutine count in the liveness probe handler.*/
 		if v.requests.Value()%100 == 0 {
 			g := int64(runtime.NumGoroutine())
 			v.goroutines.Set(g)

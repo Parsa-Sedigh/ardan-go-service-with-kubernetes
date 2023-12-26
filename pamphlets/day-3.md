@@ -479,6 +479,7 @@ The way vault is used in this project, is good for a dev env, there's probably b
 We're not gonna use it in this project, instead we implement our own keystore but you're not allowed to use it in prod. But you can use this package
 in testing.
 
+## 17-Auth / Liveness and Readiness
 We have created a private key to the project(and put it in repo which is not secure at all, don't do this) under keys folder and it's name is a uuid.
 Now that filename is gonna be the `kid` or key id which is put into the jwt header.
 
@@ -494,9 +495,40 @@ make test-endpoint-auth
 After implementing authentication and authorization, we can almost start focusing on the business problems which is building a REST API for our sales.
 To do that, we need to think about our data model.
 
-## 17-Auth / Liveness and Readiness
+We're gonna start at the business package instead of thinking about tables and relations at the database level. But traditionally, we start
+at the database level.
 
-Business Package Design
+We don't want our liveness and readiness handlers to be on the same port as the application traffic. Because I don't need that to go through
+the middlewares of the app like metrics or ... . I want this on the debug side.
+
+We put the readiness and liveness handlers in the `checkgrp` package inside
+
+**Readiness:** I'm ready to receive traffic. I'm alive, but I'm more than just alive. Like if you send me a req, I should be able to process it with no problem.
+Also I can talk to the DB.
+
+**Liveness:** Just a ping. Are you alive? We can use the liveness handler as a way of me being able to also get info out of the service, like
+the build version, pod IP, GOMAXPROCS and ... . The ingress or other k8s objects don't care about this info that we return in
+the liveness handler, it's just for us.
+
+We're picking one req every 100 reqs to set the number of goroutines for metrics. Because we don't want to build the timer loop.
+Note that the liveness probe is a free timer loop. Because k8s is calling it on whatever interval you want the k8s to call it on.
+So why would you ever need the timer loop? So we can update the goroutine count in the liveness probe handler.
+
+Q: Shouldn't the readinessProbe and livenessProbe be in the dev/sales instead of base/sales? Maybe you want different values for different environments?
+
+A: If you need different values for different environments, that should be in the patch.
+
+The ingress also hits liveness in addition to other components of the cluster. So you might see the liveness handler gets hit twice, so one is from
+inside k8s and one from ingress.
+
+Liveness should hit before readiness.
+
+```shell
+make liveness-local # to hit the liveness handler manually
+```
+With this, anytime we want, we can get any info we want from the service and it's also called by k8s on an interval.
+
+## 18-Business Package Design
 
 Business Package Implementation
 

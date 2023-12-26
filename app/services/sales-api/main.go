@@ -141,7 +141,8 @@ func run(log *zap.SugaredLogger) error {
 		/* do not use http.DefaultServeMux here. Some dependency or yourself, could expose some endpoints that shoudldn't be used
 		by anyone and should be behind a firewall, but you accidentally exposed them by binding the http.DefaultServeMux directly.
 		Instead, create your own mux and bind that here instead of http.DefaultServeMux.*/
-		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.StandardLibraryMux()); err != nil {
+		/* debug.Mux() registers the /debug routes which include of pprof routes and readiness and liveness handlers. */
+		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.Mux(build, log)); err != nil {
 			log.Errorw("shutdown", "status", "debug v1 router closed", "host", cfg.Web.DebugHost, "msg", err)
 		}
 	}()

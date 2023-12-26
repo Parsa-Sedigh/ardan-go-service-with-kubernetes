@@ -316,6 +316,10 @@ is running.
 ## 13-3.3: Write Basic Service for Testing
 
 ## 6-Kubernetes Quotas
+- If we made a code change -> make dev-update
+- if we made a config(k8s config) change -> make dev-apply
+- if both -> make dev-update-apply
+
 To get the environment up:
 ```shell
 make dev-up
