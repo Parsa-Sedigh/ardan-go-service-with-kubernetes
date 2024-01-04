@@ -5,6 +5,7 @@ import (
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/mid"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
+	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ type APIMuxConfig struct {
 	Shutdown chan os.Signal
 	Log      *zap.SugaredLogger
 	Auth     *auth.Auth
+	DB       *sqlx.DB
 }
 
 // APIMux constructs a http.Handler with all application routes defined

@@ -2,31 +2,36 @@
 package checkgrp
 
 import (
+	"context"
 	"encoding/json"
+	database "github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/sys/database/pgx"
+	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
+	"time"
 )
 
 // Handlers manages the set of check endpoints.
 type Handlers struct {
 	Build string
 	Log   *zap.SugaredLogger
+	DB    *sqlx.DB
 }
 
 // Readiness checks if the database is ready and if not will return a 500 status.
 // Do not respond by just returning an error because further up in the call
 // stack it will interpret that as a non-trusted error.
 func (h Handlers) Readiness(w http.ResponseWriter, r *http.Request) {
-	//ctx, cancel := context.WithTimeout(r.Context(), time.Second)
-	//defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+	defer cancel()
 
 	status := "ok"
 	statusCode := http.StatusOK
-	//if err := database.StatusCheck(ctx, h.DB); err != nil {
-	//	status = "db not ready"
-	//	statusCode = http.StatusInternalServerError
-	//}
+	if err := database.StatusCheck(ctx, h.DB); err != nil {
+		status = "db not ready"
+		statusCode = http.StatusInternalServerError
+	}
 
 	data := struct {
 		Status string `json:"status"`

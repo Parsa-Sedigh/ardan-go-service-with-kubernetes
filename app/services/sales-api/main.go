@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers"
+	database "github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/sys/database/pgx"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/debug"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/keystore"
@@ -61,6 +62,20 @@ func run(log *zap.SugaredLogger) error {
 			APIHost         string        `conf:"default:0.0.0.0:3000"`
 			DebugHost       string        `conf:"default:0.0.0.0:4000"`
 		}
+		DB struct {
+			User     string `conf:"default:postgres"`
+			Password string `conf:"default:postgres,mask"`
+
+			/* if you have telepresence, use this default. One big win with telepresence is all of our defaults work whether we're inside
+			or outside the cluster.*/
+			//Host         string `conf:"default:database-service.sales-system.svc.cluster.local"`
+			// if you don't have telepresence, use this one
+			Host         string `conf:"default:localhost"`
+			Name         string `conf:"default:postgres"`
+			MaxIdleConns int    `conf:"default:2"`
+			MaxOpenConns int    `conf:"default:0"`
+			DisableTLS   bool   `conf:"default:true"`
+		}
 		Auth struct {
 			KeysFolder string `conf:"default:zarf/keys/"`
 			ActiveKID  string `conf:"default:54bb2165-71e1-41a6-af3e-7da4a0e1e2c1"`
@@ -98,6 +113,28 @@ func run(log *zap.SugaredLogger) error {
 
 	// show the config that you're running
 	log.Infow("startup", "config", out)
+
+	// -------------------------------------------------------------------------
+	// Database Support
+
+	log.Infow("startup", "status", "initializing database support", "host", cfg.DB.Host)
+
+	db, err := database.Open(database.Config{
+		User:         cfg.DB.User,
+		Password:     cfg.DB.Password,
+		Host:         cfg.DB.Host,
+		Name:         cfg.DB.Name,
+		MaxIdleConns: cfg.DB.MaxIdleConns,
+		MaxOpenConns: cfg.DB.MaxOpenConns,
+		DisableTLS:   cfg.DB.DisableTLS,
+	})
+	if err != nil {
+		return fmt.Errorf("connecting to db: %w", err)
+	}
+	defer func() {
+		log.Infow("shutdown", "status", "stopping database support", "host", cfg.DB.Host)
+		db.Close()
+	}()
 
 	// -------------------------------------------------------------------------
 	// Initialize authentication support
@@ -142,7 +179,7 @@ func run(log *zap.SugaredLogger) error {
 		by anyone and should be behind a firewall, but you accidentally exposed them by binding the http.DefaultServeMux directly.
 		Instead, create your own mux and bind that here instead of http.DefaultServeMux.*/
 		/* debug.Mux() registers the /debug routes which include of pprof routes and readiness and liveness handlers. */
-		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.Mux(build, log)); err != nil {
+		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.Mux(build, log, db)); err != nil {
 			log.Errorw("shutdown", "status", "debug v1 router closed", "host", cfg.Web.DebugHost, "msg", err)
 		}
 	}()
@@ -159,6 +196,7 @@ func run(log *zap.SugaredLogger) error {
 		Shutdown: shutdown,
 		Log:      log,
 		Auth:     auth,
+		DB:       db,
 	})
 
 	api := http.Server{

@@ -1,6 +1,6 @@
-// Package usersummary provides an example of a core business API that
+// Package summary provides an example of a core business API that
 // is based on a view.
-package usersummary
+package summary
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/data/order"
 )
 
-// Storer interface declares the behavior this package needs to perists and
+// Storer interface declares the behavior this package needs to persists and
 // retrieve data.
 type Storer interface {
 	Query(ctx context.Context, filter QueryFilter, orderBy order.By, pageNumber int, rowsPerPage int) ([]Summary, error)

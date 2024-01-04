@@ -531,11 +531,11 @@ make liveness-local # to hit the liveness handler manually
 With this, anytime we want, we can get any info we want from the service and it's also called by k8s on an interval.
 
 ## 18-Business Package Design
-IMO it's risky to run liveness and readiness probes on a different port than the API(app) port. Because if the app doesn't come up,
+**IMO it's risky to run liveness and readiness probes on a different port than the API(app) port. Because if the app doesn't come up,
 we won't catch it until it reaches the user traffic. Yes it's correct. I just hate the idea that those probes go through all the middlewares and ... .
 So we have to hard code in the middlewares that if the req is for liveness and readiness, leave it alone.
-It's better to put the liveness and readiness handlers in the same port as our api is running instead of the debug port. But for now,
-we're running them in the debug port.
+It's better to put the liveness and readiness handlers in the same port as our api is running instead of the debug port. So move them into a handler
+group called checkgrp(look at v5 project).**
 
 ### DDD
 We have the handlers in the app layer, it's job is to receive external input(API).
@@ -746,7 +746,8 @@ But for our mental model, we separate core packages and view core(cview) package
 model.go, <domain>.go, order.go, filter.go and ... .
 
 cview domains have it's own domain and table(a DB view). If there are a lot of reports going on, we would have a lot of cview domains rather than
-core domains. We don't want to clutter our core layer. So when we get into reports, we wanna use cview packages
+core domains. We don't want to clutter our core layer. So when we get into reports, we wanna use cview packages.
+Views exist because we have to join data across existing domains. But there's still a primary domain in that join.
 
 Note: We have layers and packages. Layers are just folders, but packages are folders with at least one go file in them.
 
@@ -755,7 +756,51 @@ When it comes to cview packages, you only need the query operations. But eventua
 
 Note: As mentioned, when using DB views to simulate a separate DB, we're cheating.
 
+Instead of using `usersummary` as the package name in cview, use the same folder structure as in the core layer(preserve the core domain),
+so create a user package that has a user folder and inside that folder, the views that their main domain is user, exist.
+
 ## 21-Database Support
+Your DB shouldn't be running inside the k8s cluster. Because the cluster is about the ability to be restarted. But there are DBs that have been designed to
+run in k8s. But traditional DBs need to run outside of cluster, in a cloud env. But in the local env(dev env), we wanna bring it up and
+down quickly, so we run DB inside the cluster. However, we're gonna use a PV, so if DB does get restarted(which definitely would do),
+we don't lose the data.
+
+Note: The dev-database.yaml is only for dev env and it's not production-ready.
+
+Install pgcli.
+
+Run `dev-up-local` to pull the postgres image into kind. After running it, we should have a DB pod running.
+Now run:
+```shell
+make pgcli
+```
+Now you should get the prompt.
+
+### Go support for DB
+I don't like ORMs.
+
+sqlx package is an abstraction layer for executing SQL in a safe way(avoid sql injection). This package leverages the go std lib sql pacakge underneath
+which requires a DB driver. There's two drivers today:
+- pq as the driver(this project is done)
+- pgx itself as the driver(actively being worked on). pgx tries to be sqlx too(being abstraction layer in addition to DB driver). So we can use pgx
+not just as a driver but also as abstraction layer for using sql. Note: You don't need convenience funcs around sqlx or pgx, you can just use it.
+
+In the service project, there's the ability to either use pq or pgx as the driver(see business/sys/database/). You see two packages there.
+pq and pgx packages. They are convenience package(`database`) using sqlx that we've built to access pq and pgx third-party packages easier.
+
+The service project is using the pgx driver.
+
+The dbarray package is code that we actually got from the pq library to make arrays work.
+
+Q: Why database package is in the business layer?
+
+A: Because we're gonna add both logging and tracing in this package and those are not foundational.
+
+`queryString` is used to print the query. But there are times where you can't log those queries since it's sensitive info. So don't use
+that func for those queries.
+
+Do not abstract the running logic of the service into a `run` func Put all in the main func and use divider comments. Because then you can leverage
+closures and ... .
 
 ## 22-Migrations
 

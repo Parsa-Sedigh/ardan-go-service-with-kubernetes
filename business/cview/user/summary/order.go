@@ -1,4 +1,4 @@
-package usersummary
+package summary
 
 import "github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/data/order"
 

@@ -24,6 +24,8 @@ SHELL = $(if $(wildcard $(SHELL_PATH)),/bin/ash,/bin/bash)
 GOLANG          := golang:1.21.4
 ALPINE          := alpine:3.18
 KIND            := kindest/node:v1.27.3
+
+# We're specifying the major.minor version and not the patch. But in a prod env, you wanna specify the patch@<SHA> as well.
 POSTGRES        := postgres:15.5
 VAULT           := hashicorp/vault:1.15
 GRAFANA         := grafana/grafana:10.2.0
@@ -73,6 +75,9 @@ dev-up-local:
 
 	kubectl wait --timeout=120s --namespace=local-path-storage --for=condition=Available deployment/local-path-provisioner
 
+	kind load docker-image $(TELEPRESENCE) --name $(KIND_CLUSTER)
+	kind load docker-image $(POSTGRES) --name $(KIND_CLUSTER)
+
 	# load telepresence image into our kind envionrment.
 	#kind load docker-image $(TELEPRESENCE) --name $(KIND_CLUSTER)
 
@@ -96,6 +101,9 @@ dev-load:
 	kind load docker-image $(SERVICE_IMAGE) --name $(KIND_CLUSTER);
 
 dev-apply:
+	kustomize build zarf/k8s/dev/database | kubectl apply -f -
+	kubectl rollout status --namespace=$(NAMESPACE) --watch --timeout=120s sts/database
+
 	# kustomize build is gonna generate all the yaml and pipe the result to kubectl apply in order to apply them to k8s.
 	# Then we wait for the condition=Ready to know that the service is up and running
 	kustomize build zarf/k8s/dev/sales | kubectl apply -f -
@@ -181,3 +189,9 @@ readiness-local:
 
 readiness:
 	curl -il $(SERVICE_NAME).$(NAMESPACE).svc.cluster.local:4000/debug/readiness
+
+pgcli-local:
+	pgcli postgresql://postgres:postgres@localhost
+
+pgcli:
+	pgcli postgresql://postgres:postgres@database-service.$(NAMESPACE).svc.cluster.local
