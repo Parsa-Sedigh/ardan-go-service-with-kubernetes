@@ -162,7 +162,7 @@ what's going on and handle it. We put the error handling into **one place**.
 Q: What types of error signals or error values we need out of the box?
 
 A: Two values to start with.
-- **trusted error type**: We don't want to leak anything about the system by default. We have an error that has a message(string) and we
+- **trusted error type(`RequestError`)**: We don't want to leak anything about the system by default. We have an error that has a message(string) and we
 trust the message and that message can go all the way out. **Everything is not trusted to begin with.** If we receive an error
 and we don't know what that error is, we don't know what type that error is, we treat it as a 500. But overtime we can improve and make it 
 more specific, maybe a 4xx.
@@ -501,6 +501,8 @@ at the database level.
 We don't want our liveness and readiness handlers to be on the same port as the application traffic. Because I don't need that to go through
 the middlewares of the app like metrics or ... . I want this on the debug side.
 
+**UPDATE: Bill changed his mind and moved the readiness and liveness handlers to the same port that our api(app) is running.**
+
 We put the readiness and liveness handlers in the `checkgrp` package inside
 
 **Readiness:** I'm ready to receive traffic. I'm alive, but I'm more than just alive. Like if you send me a req, I should be able to process it with no problem.
@@ -562,6 +564,8 @@ the domains are not dependent on other domains. Now after doing this, the only t
 from the removed domain? Well the moved domain is technically still in our old service but it's storage layer has changed in a way that
 for doing the CRUD, we hit the new service! So it's storage layer is gonna call the new service.
 
+Since product has a userID in it's model, it can import the user package, because the relationship is there.
+
 Now if we want the products + username, we could create a new domain named `productsUsers` which we call it a **view**. This domain also has it's own
 storage layer like other domains which also means we assume it has it's own DB. With this, we kinda have a duplication of data of both users domain
 and products domain, but more importantly, how does the data get to the DB of this view domain? This is where some of the ideas around event-driven
@@ -593,15 +597,170 @@ system to simulate that DB view. With this, we can pull out the view domain and 
 Note: The events don't have to be asynchronous, they could be synchronous.
 
 ## 19-Business Package Implementation
+Do not create a types package that holds the types for all the domains. Each domain has it's own types.
 
-Business Package Implementation
+We want to use custom types  in the models of the business layer. Like the mail.Address type for email instead of string. Because otherwise
+someone could hack to abuse the parse func to validate their email.
 
-Database Support
+Bad philosophy: Every layer(app, business, storage) should not trust the layer above. So we validate the data before working with it in business layer
+and storage layer. Yes when app layer code is talking to business layer, we should validate the data at the business(no trust).
 
-Migrations
+But for example when there's a relationship between two packages, for example when we have business to business API calls happening like
+product and user, product is importing user, but the data is already been validated 99 out of 100 times. So we're validating unnecessary and it could
+include DB hits.
 
-Storage Packages / Handlers
+So this idea of no-trust, is creating massive inefficiencies when it comes to business-to-business API calls. Maybe we could put a flag in the API
+and say: hey, this is a business to business call. No can't do that, it's not good.
 
-Testing
+Instead, we should create layers of trust and move validation somewhere else.
 
-Testing / Observability
+- We know only the business layer calls the storage layer. Tge APIs between business layer and storage layer are trusted. So storage trusts the called
+with all the data. 
+- We also trust the business-to-business calls. Note: There are times where you have specific business rules, that's different(you can
+do validation there). It's business logic not data validation, it won't create inefficiencies like having to call DB multiple times for the same validation.
+Here, we're talking about the actual input of data coming into the API. By doing this, it pushes validation at the application layer.
+
+Now by having a type system at each business domain and also with those parse funcs, we can mitigate blindly trusting. For example for creating
+a user, we should provide a `mail.Address` not a string and the only way to create a mail.Address is through mail.ParseAddress(<string>) .
+Yeah it could create it with a mail.Address{} as well. The same for `Role`. WIth this, the business is not worried that the app layer wouldn't validate
+the data, because without using those parse funcs in the app layer, it can't call the business layer.
+
+Note: Zero values can escape this idea.
+
+We want to have different models for different CRUD ops. Like NewUser, UpdateUser. Otherwise if we used `User` for new op, the caller
+would think it has to give us an ID because there is an ID field in the user but not in NewUser.
+
+About update: Somtimes we can't update a single field, because some fields can have certain values if other fields are certain values and again if other
+fields are certain values and ... and so you can't just update individual fields, you have to update an entire model. But if I wanna update sth,
+I shouldn't be asking the caller to give me a complete model necessarily. That's a burden. So we use pointer semantics in the update model as a way
+of describing the concept of null.
+
+Nil vs null: NUll is **absence of value**. Now go doesn't natively have the concept of null. It has the concept of nil. nil in go represents the **zero
+value** of types that can work with pointer semantics(pointer variables and all the internal types that are pointer).
+
+We need the concept of null(absence) in the update model. So we use pointer semantics, so user gives us only the fields he wants to update.
+
+Note: Remember that the data model of user package is `user.User`. **A lot of times, one type of a package would have the package's name like the
+`Context` type in the `context` package.**
+
+Now in the user package, the data model is user.User, but we also have an API that we need and for the API we use the name `Core`. We have a type and
+a constructor for it. Why core? Because remember we talk about "the core business package", "the core user package". So we named it Core.
+
+An API defines the type system it needs to accept data and to return data. The package itself decides whether or not it needs **decoupling** or not.
+For example the business core user package needs to be decoupled from the storage implementation. So it's defining
+the Storer interface(not the other way around). Because it's saying: This is what I need in terms of behavior for my API to work.
+
+**Therefore: If a package needs decoupling, which means it needs an interface, it itself must define that interface not the user of the package.**
+Like the relationship of a service and a repository. The service needs to be decoupled from the storage layer(repo), so it defines the repo interface
+inside itself(service defines the repo interface inside the service package).
+
+Whenever a func is IO-driven, so it should take a ctx for cancellation and you might want to trace it.
+
+Note: When defining a method on a type, if that type represents an API, the method receiver should be pointer, otherwise use value receiver(also
+if we mutate the data of that type, use pointer receiver). For example `Core` type of user package represents an API not data, so we use
+pointer receiver for it's methods.
+
+Note: We use value semantic instead of pointer semantic for second arg(NewUser) of Create in user package, because that arg represents a data.
+Also the return type of that func is a value, not a pointer, because it represents a data.
+
+Interface types -> value semantics
+
+Note: Decoupling is handled through interfaces.
+
+**Note about API design of update method in user package:**
+
+Why we want both User and UpdateUser model?
+Remember the Update method is about asking the caller what field they wanna update? You need to get a snapshot of a User model and
+update that one based on UpdateUser. So we need both. But the question is: Can't this method pull the User out of storage itself?
+So the called won't have to pass it?
+We could. But the reality is that the caller probably already had to get the User for some reason before calling this method. Especially if it's a
+business-to-business call. They probably already have the user.
+
+With this API design, we're actually forcing the app layer to go get the User first(by getting it from client or maybe call into business layer
+to get the User) before they can do an update using the business package. There's efficiency in that, because if there's a business-to-business calls
+being done, you(caller) probably already got a User so we don't need to query it again in the Update() method! We just pass it.
+So don't change the API to accept a userID instead of whole `User` model. If we accepted the userID, it would be inefficient because
+in the Update method we would have to query for the User model. We would already have the user in the caller.
+We don't want to do that in the business layer, because that's gonna be done potentially a lot of times before calling this method. We don't want
+to get small values(and not whole model) and again do another query in the business method.
+
+The same thing for the `Delete` method. It gets the whole User model. By designing the API like this, the caller(app layer or another business) is **forced** to first
+find out if the user exists to delete it(since it needs to pass it to the Delete method).
+
+The methods that are put into an interface are APIs.
+
+**Who does validation? The app layer. It means the business layer does what the app layer wants and the storage layer does what the business layer
+wants.**
+
+Any query API that's gonna return a slice, should have filtering, ordering and pagination. 
+
+Q: Hey the Query method gets 5 args, isn't it better to use a struct?
+
+A: No using struct would make this API worse. A struct hides too much, it's not precise as individual params.
+
+Q: Why QueryByIDs doesn't have filtering, ordering and more importantly pagination? We could potentially return 1 million records.
+
+A: Yes we should!
+
+## 20-Business Package Implementation
+### Strategies about filtering and ordering
+The validation tags(`validate`) are gonna be in the app layer, we don't want them in the business layer. It's the app layer job is to do validation.
+
+You can have package-level variables when you don't need:
+- configuration
+- instantiation of them 
+- order of their construction
+
+For example in validate package, we don't have construction using New... funcs. If we do care about 
+different languages(currently we only support En), we would have to construct it in main and pass it around, instead of having package-level vars.
+
+Note: Avoid singletons.
+
+By applying validation, it requires us to have another error type(errors are sort of signal) named `FieldError`. Because if any of those fields
+fail validation, you wanna report that.
+
+Note: The `RequestError` of service v4.1 project is the same as `TrustedError` in service v5, just with a different name.
+
+We used value receiver for methods of FieldErrors because you could have more than one field fail validation and you want them all.
+
+Since we added another type of error, we need to handle it in the errors middleware(add a new `case`).
+
+Do not add validation tags when you're relying on the type system for validation in the business layer. For example in the `QueryFilter` structs,
+we don't add validate tags for the fields that have a specific type so that we can rely on the type system for validation, for example using
+`mail.Address` or `uuid.UUID`.
+
+Note: Product core imports user core. We can do this because a `Product` has a `UserID` field. So we can bring in the `user.Core` and access
+the user domain in product, when we need to. But the user package cannot bring in the product domain if it even needs it. The relationship isn't there,
+a user model does not have a productID. But product does have a userID, so we can bring in the user package into the product package. This is when
+one core can use another core. So we won't get any import cycles.
+But if in the data model, a user has a productID and a product has a userID, the user model is wrong.
+
+`cview`(core view) is the layer that we put the core business packages that are view-based. We're gonna have long names in there because the views are merging
+data together. We don't have just a user like what we have in the core package, we have sth like user summary data. The naming convention for this
+layer is: <the main domain like user><other info ...>.
+
+Opinion: You don't need the cview layer(folder). The argument is: I don't care if this domain is a view Because the packages that 
+we're putting under cview, are core packages like any other core package.
+This is a correct argument. The fact that this domain(domains inside cview layer) are hitting our views, are irrelevant. They're core.
+But for our mental model, we separate core packages and view core(cview) packages. But note that it has the same files as core packages, files like
+model.go, <domain>.go, order.go, filter.go and ... .
+
+cview domains have it's own domain and table(a DB view). If there are a lot of reports going on, we would have a lot of cview domains rather than
+core domains. We don't want to clutter our core layer. So when we get into reports, we wanna use cview packages
+
+Note: We have layers and packages. Layers are just folders, but packages are folders with at least one go file in them.
+
+When it comes to cview packages, you only need the query operations. But eventually if you decide to wire-in events, you would have a `create` and
+`update` because when those events fire in other domains, you wanna update this view.
+
+Note: As mentioned, when using DB views to simulate a separate DB, we're cheating.
+
+## 21-Database Support
+
+## 22-Migrations
+
+## 23-Storage Packages / Handlers
+
+## 24-Testing
+
+## 25-Testing / Observability

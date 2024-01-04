@@ -2,6 +2,7 @@ package mid
 
 import (
 	"context"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/sys/validate"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
@@ -24,13 +25,20 @@ func Errors(log *zap.SugaredLogger) web.Middleware {
 				var status int
 
 				switch {
-				case v1.IsTrustedError(err):
-					trsErr := v1.GetTrustedError(err)
-
+				case validate.IsFieldErrors(err):
+					fieldErrors := validate.GetFieldErrors(err)
 					er = v1.ErrorResponse{
-						Error: "data validation error",
+						Error:  "data validation error",
+						Fields: fieldErrors.Fields(),
 					}
-					status = trsErr.Status
+					status = http.StatusBadRequest
+
+				case v1.IsRequestError(err):
+					reqErr := v1.GetRequestError(err)
+					er = v1.ErrorResponse{
+						Error: reqErr.Error(),
+					}
+					status = reqErr.Status
 
 				case auth.IsAuthError(err):
 					er = v1.ErrorResponse{
