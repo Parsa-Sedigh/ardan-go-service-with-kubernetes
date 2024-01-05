@@ -6,6 +6,7 @@ toolchain go1.21.0
 
 require (
 	github.com/ardanlabs/conf/v3 v3.1.7
+	github.com/ardanlabs/darwin/v3 v3.3.1
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/go-playground/locales v0.14.1
 	github.com/go-playground/universal-translator v0.18.1

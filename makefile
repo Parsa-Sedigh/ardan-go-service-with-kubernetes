@@ -75,7 +75,7 @@ dev-up-local:
 
 	kubectl wait --timeout=120s --namespace=local-path-storage --for=condition=Available deployment/local-path-provisioner
 
-	kind load docker-image $(TELEPRESENCE) --name $(KIND_CLUSTER)
+	#kind load docker-image $(TELEPRESENCE) --name $(KIND_CLUSTER)
 	kind load docker-image $(POSTGRES) --name $(KIND_CLUSTER)
 
 	# load telepresence image into our kind envionrment.
@@ -145,6 +145,9 @@ dev-describe-deployment:
 dev-describe-sales:
 	kubectl describe pod --namespace=$(NAMESPACE) -l app=$(APP)
 
+dev-logs-init:
+	kubectl logs --namespace=$(NAMESPACE) -l app=$(APP) -f --tail=100 -c init-migrate
+
 # ==============================================================================
 
 run-scratch:
@@ -195,3 +198,6 @@ pgcli-local:
 
 pgcli:
 	pgcli postgresql://postgres:postgres@database-service.$(NAMESPACE).svc.cluster.local
+
+migrate:
+	go run app/tooling/admin/main.go

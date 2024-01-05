@@ -24,10 +24,10 @@ spec:
     spec:
       terminationGracePeriodSeconds: 60
 
-#      initContainers:
-#        - name: init-migrate-seed
-#          image: service-image
-#          command: ['./sales-api']
+      initContainers:
+        - name: init-migrate-seed
+          image: service-image
+          command: ['./admin']
 #          env:
 #            - name: SALES_DB_USER
 #              valueFrom:

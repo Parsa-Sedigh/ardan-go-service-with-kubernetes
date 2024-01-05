@@ -759,6 +759,9 @@ Note: As mentioned, when using DB views to simulate a separate DB, we're cheatin
 Instead of using `usersummary` as the package name in cview, use the same folder structure as in the core layer(preserve the core domain),
 so create a user package that has a user folder and inside that folder, the views that their main domain is user, exist.
 
+DB views are the only place that we can use JOINs between domains. But eventually at some point, you wanna get rid of the views and use the event system
+to make this a table.
+
 ## 21-Database Support
 Your DB shouldn't be running inside the k8s cluster. Because the cluster is about the ability to be restarted. But there are DBs that have been designed to
 run in k8s. But traditional DBs need to run outside of cluster, in a cloud env. But in the local env(dev env), we wanna bring it up and
@@ -803,6 +806,26 @@ Do not abstract the running logic of the service into a `run` func Put all in th
 closures and ... .
 
 ## 22-Migrations
+We use `ardanlabs/darwin` for migrations.
+
+Once you run your migration, you can't go back and edit anything in an old version of migration.
+
+Note: We don't use the seed information for testing. We should re-design the testing to never use the seeds as data for testing.
+
+dbmigrate package is a convenience package around using the darwing module.
+
+The `admin` program in app/tooling is for learning migrations. To run this program:
+```shell
+make migrate
+
+# then do:
+make pgcli 
+```
+
+We run the DB migrations through the `initContainers` through k8s. We can do this in dev, staging and production envs.
+
+Make the default configs work in every environment. We can use telepresence to use the same namespace which avoids changing 
+things in dev and other environments.
 
 ## 23-Storage Packages / Handlers
 
