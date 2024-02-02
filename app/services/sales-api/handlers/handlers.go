@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers/v1/testgrp"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/app/services/sales-api/handlers/v1/usergrp"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/core/user"
+	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/core/user/stores/userdb"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/auth"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/business/web/v1/mid"
 	"github.com/Parsa-Sedigh/ardan-go-service-with-kubernetes/foundation/web"
@@ -27,6 +30,14 @@ func APIMux(cfg APIMuxConfig) *web.App {
 	// bind a route to the mux(app variable). If a req with GET method comes in, execute this handler
 	app.Handle(http.MethodGet, "/test", testgrp.Test)
 	app.Handle(http.MethodGet, "/test/auth", testgrp.Test, mid.Authenticate(cfg.Auth), mid.Authorize(cfg.Auth, auth.RuleAdminOnly))
+
+	// =============================================================================
+
+	usrCore := user.NewCore(userdb.NewStore(cfg.Log, cfg.DB))
+
+	ugh := usergrp.New(usrCore, cfg.Auth)
+
+	app.Handle(http.MethodGet, "/users", ugh.Query)
 
 	return app
 }

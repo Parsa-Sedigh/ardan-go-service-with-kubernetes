@@ -8,10 +8,12 @@ import (
 
 // Product represents an individual product.
 type Product struct {
-	ID          uuid.UUID
-	Name        string
-	Cost        float64
-	Quantity    int
+	ID       uuid.UUID
+	Name     string
+	Cost     float64
+	Quantity int
+
+	// the Sold and Revenue fields are aggregate fields and shouldn't be here
 	Sold        int
 	Revenue     int
 	UserID      uuid.UUID

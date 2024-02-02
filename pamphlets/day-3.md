@@ -828,6 +828,52 @@ Make the default configs work in every environment. We can use telepresence to u
 things in dev and other environments.
 
 ## 23-Storage Packages / Handlers
+We have a `stores` layer(folder) in each core domain and we put storage implementations in that folder. Now why a separate layer?
+Because we could have multiple implementations of that `Storer` interface.
+
+We use <domain name>db or <domain name>Cache or ... . Notice the <domain name>. We use the <domain name> in order to avoid naming clashes
+when importing.
+
+Note: The app layer has it's own models. Also the business layer has it's own models. Also the storage layer has it's own models(for example, the model.go file
+in `userdb` folder). We have to do this. We can't share these models across these boundaries. Because each boundary has to define for itself, how data
+is moving in and out of that boundary. So we'll be marshaling the models between these layers.
+Note: The upper layer that uses the lower layer interface, can also use the lower layer models but not the other way around. Imports always go down not up.
+
+Sometimes these models of different layers are identical but their struct tags are definitely different.
+
+When converting things using funcs, use `to` in naming not `from`. Because it tells you what's going out. Like `toDBUser` or `toCoreUser`.
+
+We want to work with locale time in business layer. This helps with logs and ... . Especially in dev mode. For example if we're developing and
+we have a 5 hr difference with UTC and we see the logs in UTC, our brain would explode. Instead, we want to see the logs in our locale time.
+This doesn't affect the frontend.
+
+Since DB has it's own type system and different field names, we need separate models in storage layer.
+
+**Do not use struct tags for business layer models.**
+
+The models in app layer, are prefixed with `app`. These models are exported because we wanna use them in tests. There's another approach
+where we make them unexported and redefine them in tests again. You can make them unexported like the db package models.
+
+All of the types of models in app layer are built-in types. We don't use UUID or mail.Address . But why?
+
+It's because of shortcoming of how the std lib json unmarshaler funcs work.
+
+Bug in std lib: The json decoder, doesn't return a detailed set of reasons the unmarshalling failed. Because we don't know why the unmarshalling
+failed, if we use non-builtin types in our models, all we can return back to the user is we couldn't unmarshal it. We can't send back detailed info.
+There are 2 solutions:
+1. fix the std library decode to get back detailed info
+2. use a different json package that gives us detailed info
+
+Instead, we can use builtin types for our app models, but then validate that for example the string type is a UUID. So that we get back detailed info
+about which validation failed. So instead of putting non-builtin types into app req models(like AppNewUser), we use validations on models after
+the initial model that deal with reqs. So we use builtin types so that the json decoder doesn't fail and if payload is not correct, the failure happens
+when we validate the payload(not when we unmarshal).
+
+So what we do is we use builtin types in order to prevent the unmarshal to fail and then we validate using the types we really want.
+
+Anytime you have a func for parsing(like parseOrder or ...), you should validate stuff as well.
+
+`NewRequestError` creates a trusted error.
 
 ## 24-Testing
 
