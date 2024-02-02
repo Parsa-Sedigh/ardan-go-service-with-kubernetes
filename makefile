@@ -206,7 +206,7 @@ query-local:
 	curl -il http://localhost:3000/users?page=1&rows=2
 
 query:
-	curl -il $(SERVICE_NAME).$(NAMESPACE).svc.cluster.local:3000/users?page=1&rows=2
+	curl -il $(SERVICE_NAME).$(NAMESPACE).svc.cluster.local:3000/users?page=1&rows=2&orderBy=name
 
 query-local-jq:
 	@curl -s http://localhost:3000/users?page=1&rows=2 | jq
