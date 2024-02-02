@@ -876,6 +876,30 @@ Anytime you have a func for parsing(like parseOrder or ...), you should validate
 `NewRequestError` creates a trusted error.
 
 ## 24-Testing
+We're gonna write unit tests and application-layer tests and we wanna use the DB for both of those.
 
+Add docker package in `foundation` layer.
+
+Add `dbtest` package to business layer.
+
+Write the test files in a separate package than your source code and name it's package as `<x>_test` where x is the source code package that
+you're writing test for. This forces you to only use the exported API of your source code. There are times when you wanna write tests for
+unexported APIs, that's fair, you can write the tests in the same package as the source code.
+
+Note: You don't want to seed data using sql, because of migrations we do over time. You wanna use the API.
+
+To use data in mocks, use funcs like `TestGenerateNewProducts`, but to put data into DB, use funcs like `TestGenerateSeedProducts`.
+
+Bill prefers not to use assertion packages primarily for one reason: he doesn't like `if err != nil` disappearing from the test. Because
+your tests are your first attempt to use your APIs, so if you're getting rid of how a regular user calls the API, in your tests, your missing the
+experiencing of your APIs.
+
+To run only one test:
+```shell
+# note: if the tooling can pickup multiple test names, it will run multiple tests. In order to avoid that, cd into the inner directories instead of
+# running this command in the parent folders like the root of the project. You wan the first few characters of every subtest to be unique, that way
+# when you run this command, it will only run that test.
+go test -count=1 -run <test name like Test_user/paging>
+```
 
 ## 25-Testing / Observability

@@ -210,3 +210,33 @@ query:
 
 query-local-jq:
 	@curl -s http://localhost:3000/users?page=1&rows=2 | jq
+
+# ==============================================================================
+# Running tests within the local computer
+
+test-race:
+	CGO_ENABLED=1 go test -race -count=1 ./...
+
+# Note: set CGO_ENABLED=0 so the tests run in the same mode as the binary runs in the docker container
+# Note: Go's frontend or ecosystem caches tests. So if the code didn't change, it doesn't have to run them again. But we don't want this.
+# setting -count=1 causes the test to run again even if it's cached.
+test-only:
+	CGO_ENABLED=0 go test -count=1 ./...
+
+test-only122:
+	CGO_ENABLED=0 go1.22rc2 test -count=1 ./...
+
+lint:
+	CGO_ENABLED=0 go vet ./...
+	staticcheck -checks=all ./...
+
+vuln-check:
+	govulncheck ./...
+
+test: test-only lint vuln-check
+
+test-race: test-race lint vuln-check
+
+test122: test-only122
+
+test-all: test-race lint vuln-check
