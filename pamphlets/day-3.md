@@ -902,4 +902,34 @@ To run only one test:
 go test -count=1 -run <test name like Test_user/paging>
 ```
 
+Next, we wanna run tests for the route level, not just unit testing.
+
 ## 25-Testing / Observability
+Note: All route tests work against the same DB as opposed to each unit test at the business package level having it's own DB instance.
+
+When to use an interface for the core methods?
+
+If you decide that you wanna write tests and you wanna mock what's happening at the business level, you
+wanna declare an interface for the business methods, like the `UserCore` interface in product.go at product package. Do not define that interface
+in the package you wanna mock! So do not define UserCore in the user business package!
+
+Stop using zipkin and instead use prometheus and grafana.
+
+Go has great support for AST.
+
+```shell
+make all
+make dev-up
+make dev-update-apply
+
+# get an admin jwt
+make token # or make token-local
+make users
+
+make dev-down
+
+# test + linting + vulnerability check
+make test-all
+```
+
+Write happy path tests and until you hit a bug, write negative path tests.

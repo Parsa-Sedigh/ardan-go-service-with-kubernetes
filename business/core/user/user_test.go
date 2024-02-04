@@ -58,7 +58,7 @@ func Test_User(t *testing.T) {
 			nu := user.NewUser{
 				Name:            "Bill Kennedy",
 				Email:           *email,
-				Roles:           []string{user.RoleAdmin},
+				Roles:           []user.Role{user.RoleAdmin},
 				Password:        "gophers",
 				PasswordConfirm: "gophers",
 			}
